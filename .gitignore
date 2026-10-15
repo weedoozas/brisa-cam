@@ -1,0 +1,10 @@
+**/.gradle/
+**/build/
+**/local.properties
+*.apk
+*.keystore
+*.jks
+*.log
+*.zip
+TabletCam-*
+.DS_Store

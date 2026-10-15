@@ -1,0 +1,15 @@
+[Unit]
+Description=Brisa Wi-Fi camera (%i)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/tablet-webcam-linux %i
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=5
+StandardInput=null
+
+[Install]
+WantedBy=default.target

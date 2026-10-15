@@ -1,0 +1,6 @@
+<resources>
+    <item name="camera_preview" type="id" />
+    <item name="camera_privacy" type="id" />
+    <item name="camera_switch" type="id" />
+    <item name="interface_rotate" type="id" />
+</resources>
