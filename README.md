@@ -66,7 +66,7 @@ Los detalles de temporización, formatos y mediciones están en [notas técnicas
 - **Girar cámara:** cambia entre frontal y trasera conservando la conexión. Durante la transición puede mantenerse brevemente el último cuadro.
 - **Girar interfaz:** gira toda la pantalla 180° y ajusta la orientación del video. La imagen queda a la izquierda y los controles a la derecha en la orientación elegida.
 
-La cámara seleccionada, la orientación y la privacidad se recuerdan. La interfaz muestra el receptor conectado. La app funciona en primer plano, mantiene la pantalla encendida y libera la cámara al salir. El receptor Linux vuelve a conectarse cuando se abre nuevamente.
+La cámara seleccionada, la orientación y la privacidad se recuerdan. La interfaz muestra el receptor conectado. La app funciona en primer plano y mantiene la pantalla encendida. Al salir libera cámara, codec, sockets y bloqueo multicast, y suspende la actualización de la interfaz. Al volver abre una sesión nueva; el receptor Linux se conecta automáticamente.
 
 ## Instalación manual de referencia: Android + Linux con systemd
 
@@ -116,7 +116,7 @@ Con Brisa abierta:
 
 Sustituye `IP_DE_LA_TABLET` por la dirección encontrada. El instalador usa `sudo` para dos archivos de configuración del módulo; ejecútalo como tu usuario de escritorio, **no mediante `sudo ./install-linux-service`**.
 
-Copia los ejecutables a `~/.local/bin`, añade una unidad a `~/.config/systemd/user`, configura el módulo en `/etc/modules-load.d/tablet-webcam.conf` y `/etc/modprobe.d/tablet-webcam.conf`, y habilita el servicio al iniciar sesión. Este se reinicia ante fallos y espera mientras la app está cerrada. Si la IP inicial deja de responder, intenta descubrir la tablet de nuevo.
+Copia los ejecutables a `~/.local/bin`, añade una unidad a `~/.config/systemd/user`, configura el módulo en `/etc/modules-load.d/tablet-webcam.conf` y `/etc/modprobe.d/tablet-webcam.conf`, y habilita el servicio al iniciar sesión. Mientras la app está cerrada, el receptor espera con una consulta HTTP cada dos segundos; FFmpeg solo se abre cuando hay cámara disponible. Busca otra IP como máximo cada treinta segundos si la dirección no responde. Un corte del flujo hace que systemd vuelva a iniciar la espera después de tres segundos.
 
 Selecciona **TabletCam** en la aplicación de videollamadas. La salida nominal es de 20 fps, pero puede repetir imágenes: los FPS reales dependen del sensor, la iluminación, el encoder y la red. En la tablet original se observó aproximadamente 8 fps de captura; no se prometen 20 cuadros diferentes por segundo.
 
@@ -147,7 +147,7 @@ Para retirar la instalación completa, elimina los ejecutables, la unidad y los 
 - TCP **8766**: video H.264 Annex-B; un receptor a la vez.
 - UDP **8767**: descubrimiento `BRISA_DISCOVER/1` → `BRISA/1`. Usa broadcast, multicast local `239.255.42.99` y consultas directas en subredes conectadas de hasta 256 direcciones. La tablet también anuncia su dirección al último receptor conocido.
 
-No utiliza servicios de nube. **El transporte no tiene autenticación ni cifrado: úsalo en una LAN de confianza y no expongas estos puertos a Internet.** El punto de acceso debe permitir comunicación entre los equipos. Cerrar la actividad detiene la captura; fuerza el cierre de la app para terminar también sus servidores de proceso.
+No utiliza servicios de nube. **El transporte no tiene autenticación ni cifrado: úsalo en una LAN de confianza y no expongas estos puertos a Internet.** El punto de acceso debe permitir comunicación entre los equipos. Desde la versión 1.0.1, salir con Inicio o Atrás cierra también los servidores de red; no hace falta forzar el cierre del proceso.
 
 La privacidad sustituye los cuadros futuros por negro; no puede retirar imágenes que otra aplicación ya haya recibido, almacenado o grabado. En una desconexión, un consumidor podría mantener su último cuadro.
 

@@ -62,26 +62,29 @@ if [[ ! -e "$DEVICE" ]]; then
   exit 1
 fi
 
-echo "Probando conexión a $STREAM_URL …"
 receiver_health() {
-  curl --silent --show-error --max-time 3 --get --data-urlencode "receiver=$(hostname -s)" \
+  curl --silent --show-error --connect-timeout 1 --max-time 2 --get --data-urlencode "receiver=$RECEIVER_NAME" \
     "http://${TABLET_IP}:8765/health" 2>/dev/null || true
 }
-HEALTH=$(receiver_health)
-if [[ "$HEALTH" != "camera-ready" ]]; then
-  DISCOVER="$(dirname -- "${BASH_SOURCE[0]}")/brisa-discover"
-  FOUND_IP=$("$DISCOVER" 2>/dev/null || true)
-  if [[ -n "$FOUND_IP" ]]; then
-    TABLET_IP=$FOUND_IP
-    STREAM_URL="http://${TABLET_IP}:8765/stream.mjpg"
-    HEALTH=$(receiver_health)
-    echo "Brisa detectada en $TABLET_IP."
+RECEIVER_NAME=$(hostname -s)
+DISCOVER="$(dirname -- "${BASH_SOURCE[0]}")/brisa-discover"
+NEXT_DISCOVERY=$SECONDS
+echo "Esperando Brisa en $TABLET_IP; se conectará al abrir la app."
+while true; do
+  HEALTH=$(receiver_health)
+  [[ "$HEALTH" == "camera-ready" ]] && break
+  # A reachable app that is still starting needs no network discovery.
+  # Stay asleep between tiny health requests; scan the LAN at most every 30 s.
+  if [[ "$HEALTH" != "waiting" ]] && (( SECONDS >= NEXT_DISCOVERY )); then
+    FOUND_IP=$("$DISCOVER" 2>/dev/null || true)
+    NEXT_DISCOVERY=$((SECONDS + 30))
+    if [[ -n "$FOUND_IP" ]]; then
+      TABLET_IP=$FOUND_IP
+      STREAM_URL="http://${TABLET_IP}:8765/stream.mjpg"
+    fi
   fi
-fi
-if [[ "$HEALTH" != "camera-ready" ]]; then
-  echo "Esperando Brisa. Abre la app y conecta ambos equipos a la misma Wi-Fi." >&2
-  exit 1
-fi
+  sleep 2
+done
 
 H264_HEALTH=$(curl --silent --show-error --max-time 3 "http://${TABLET_IP}:8765/h264/health" 2>/dev/null || true)
 if [[ "$MODE" == "h264" && "$H264_HEALTH" != "h264-ready" ]]; then

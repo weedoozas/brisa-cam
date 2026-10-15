@@ -58,6 +58,7 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
     private final Handler uiHandler = new Handler();
     private DiscoveryServer discoveryServer;
     private boolean reverseInterface;
+    private boolean resumed;
     private int lastDisplayRotation = -1;
     private Camera camera;
     private int cameraId = -1;
@@ -88,14 +89,10 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
                 : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         buildScreen();
         h264Server = new H264StreamServer(this);
-        h264Server.start();
         avcEncoder = new AvcEncoder(h264Server);
         logAvcEncoders();
         server = new MjpegServer(frames, PORT, h264Server);
-        server.start();
         discoveryServer = new DiscoveryServer(this);
-        discoveryServer.start();
-        uiHandler.post(connectionRefresh);
     }
 
     private void logAvcEncoders() {
@@ -229,6 +226,7 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
 
     private final Runnable connectionRefresh = new Runnable() {
         @Override public void run() {
+            if (!resumed) return;
             if (camera != null && lastDisplayRotation != getWindowManager().getDefaultDisplay().getRotation()) {
                 try {
                     setPreviewOrientation(camera, cameraId);
@@ -264,7 +262,9 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
     }
 
     @Override
-    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) { openCamera(surface); }
+    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+        if (resumed) openCamera(surface);
+    }
 
     @Override
     public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) { applyPreviewAspect(); }
@@ -570,12 +570,23 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
     }
 
     @Override protected void onPause() {
+        resumed = false;
+        uiHandler.removeCallbacks(connectionRefresh);
+        if (h264Server != null) h264Server.stop();
         releaseCamera(true);
+        if (server != null) server.stop();
+        if (discoveryServer != null) discoveryServer.stop();
         super.onPause();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
+        h264Server.start();
+        server.start();
+        discoveryServer.start();
+        uiHandler.removeCallbacks(connectionRefresh);
+        uiHandler.post(connectionRefresh);
         if (previewView != null && previewView.isAvailable() && camera == null)
             openCamera(previewView.getSurfaceTexture());
     }
@@ -583,9 +594,9 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
     @Override
     protected void onDestroy() {
         uiHandler.removeCallbacks(connectionRefresh);
+        if (h264Server != null) h264Server.stop();
         releaseCamera(true);
         if (server != null) server.stop();
-        if (h264Server != null) h264Server.stop();
         if (discoveryServer != null) discoveryServer.stop();
         super.onDestroy();
     }

@@ -89,7 +89,7 @@ La comprobación debe recorrer Android → red → decodificador → cámara vir
 2. Comprueba la proporción y orientación con una escena reconocible; la vista de la tablet y la computadora deben representar el mismo encuadre, salvo el espejo propio de cada aplicación.
 3. Cambia frontal/trasera y gira la interfaz; confirma recuperación del video y preferencias al abrir de nuevo.
 4. Activa privacidad: verifica que el **video recibido** pasa a negro, mientras la vista local queda gris y el botón rojo. Una captura local gris no demuestra privacidad del receptor. Considera los cuadros ya almacenados en el consumidor.
-5. Cierra y abre Brisa y confirma reconexión automática, sin arrancar manualmente un segundo puente.
+5. Sal con Inicio y abre Brisa; repite con Atrás, incluyendo reaperturas rápidas, y confirma reconexión automática sin arrancar un segundo puente. No uses únicamente `am force-stop`: terminar el proceso oculta fugas de listeners entre actividades. Mientras está en segundo plano, comprueba que cámara, sockets de Brisa y bloqueo multicast se liberan. En Linux debe quedar el script esperando, sin FFmpeg; revisa consumo observado sin prometer consumo nulo.
 6. Abre la vista previa de la aplicación de videollamadas elegida y comprueba que aparece la cámara. Diferencia un problema de captura, del dispositivo virtual y del consumidor.
 7. Si la persona solicita validar persistencia al reiniciar, hazlo cuando pueda interrumpirse la sesión. Habilitar una unidad y comprobar su estado no demuestra por sí solo que se probó un arranque completo.
 

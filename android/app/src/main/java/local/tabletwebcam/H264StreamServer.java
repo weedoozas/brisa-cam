@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.InetSocketAddress;
 
 /** Raw Annex-B H.264 TCP source for FFmpeg on the laptop. */
 final class H264StreamServer {
@@ -22,7 +23,8 @@ final class H264StreamServer {
     private volatile byte[] codecConfig;
     private volatile String receiverAddress;
     private volatile String receiverName;
-    private ServerSocket serverSocket;
+    private volatile ServerSocket serverSocket;
+    private Thread acceptThread;
     private final SharedPreferences preferences;
 
     H264StreamServer(Context context) {
@@ -31,12 +33,24 @@ final class H264StreamServer {
 
     void start() {
         if (running) return;
+        ServerSocket candidate = null;
+        try {
+            candidate = new ServerSocket();
+            candidate.setReuseAddress(true);
+            candidate.bind(new InetSocketAddress(PORT), 2);
+        } catch (IOException e) {
+            try { if (candidate != null) candidate.close(); } catch (IOException ignored) {}
+            Log.e("TabletWebcam", "Could not bind H.264 server", e);
+            return;
+        }
+        final ServerSocket listener = candidate;
+        serverSocket = listener;
         running = true;
-        Thread thread = new Thread(new Runnable() {
-            @Override public void run() { acceptLoop(); }
+        acceptThread = new Thread(new Runnable() {
+            @Override public void run() { acceptLoop(listener); }
         }, "h264-accept");
-        thread.setDaemon(true);
-        thread.start();
+        acceptThread.setDaemon(true);
+        acceptThread.start();
     }
 
     void setEncoderReady(boolean ready) { encoderReady = ready; }
@@ -60,19 +74,21 @@ final class H264StreamServer {
             preferences.edit().putString("receiver_address", address).apply();
     }
 
-    private void acceptLoop() {
+    private void acceptLoop(ServerSocket listener) {
         try {
-            serverSocket = new ServerSocket(PORT, 2);
-            serverSocket.setReuseAddress(true);
-            while (running) {
-                Socket socket = serverSocket.accept();
+            while (running && serverSocket == listener) {
+                Socket socket = listener.accept();
+                if (!running || serverSocket != listener) {
+                    socket.close();
+                    break;
+                }
                 socket.setTcpNoDelay(true);
                 client = socket;
                 clientOutput = socket.getOutputStream();
                 Log.i("TabletWebcam", "H.264 client connected from " + socket.getInetAddress());
                 byte[] config = codecConfig;
                 if (config != null) writeToClient(config);
-                while (running && !socket.isClosed()) {
+                while (running && serverSocket == listener && !socket.isClosed()) {
                     try {
                         if (socket.getInputStream().read() < 0) break;
                     } catch (IOException e) { break; }
@@ -80,7 +96,7 @@ final class H264StreamServer {
                 closeClient(socket);
             }
         } catch (IOException e) {
-            if (running) Log.e("TabletWebcam", "H.264 TCP server stopped", e);
+            if (running && serverSocket == listener) Log.e("TabletWebcam", "H.264 TCP server stopped", e);
         }
     }
 
@@ -124,8 +140,19 @@ final class H264StreamServer {
 
     void stop() {
         running = false;
-        try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
+        encoderReady = false;
+        codecConfig = null;
+        ServerSocket listener = serverSocket;
+        serverSocket = null;
+        try { if (listener != null) listener.close(); } catch (IOException ignored) {}
         Socket socket = client;
+        // Close before taking the writer's monitor: a blocked write must unblock.
+        try { if (socket != null) socket.close(); } catch (IOException ignored) {}
         if (socket != null) closeClient(socket);
+        Thread previous = acceptThread;
+        acceptThread = null;
+        if (previous != null) {
+            try { previous.join(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
     }
 }

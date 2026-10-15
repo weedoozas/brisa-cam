@@ -6,7 +6,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Small single-port MJPEG HTTP server for Android KitKat and newer. */
 final class MjpegServer {
@@ -15,7 +18,9 @@ final class MjpegServer {
     private final int port;
     private final H264StreamServer h264;
     private volatile boolean running;
-    private ServerSocket serverSocket;
+    private volatile ServerSocket serverSocket;
+    private Thread acceptThread;
+    private final Set<Socket> clients = new HashSet<Socket>();
 
     MjpegServer(MainActivity.FrameStore frames, int port, H264StreamServer h264) {
         this.frames = frames;
@@ -25,25 +30,53 @@ final class MjpegServer {
 
     void start() {
         if (running) return;
+        ServerSocket candidate = null;
+        try {
+            candidate = new ServerSocket();
+            candidate.setReuseAddress(true);
+            candidate.bind(new InetSocketAddress(port), 8);
+        } catch (IOException e) {
+            try { if (candidate != null) candidate.close(); } catch (IOException ignored) {}
+            android.util.Log.e("TabletWebcam", "Could not bind HTTP server", e);
+            return;
+        }
+        final ServerSocket listener = candidate;
+        serverSocket = listener;
         running = true;
-        Thread thread = new Thread(new Runnable() {
-            @Override public void run() { acceptLoop(); }
+        acceptThread = new Thread(new Runnable() {
+            @Override public void run() { acceptLoop(listener); }
         }, "mjpeg-accept");
-        thread.setDaemon(true);
-        thread.start();
+        acceptThread.setDaemon(true);
+        acceptThread.start();
     }
 
     void stop() {
         running = false;
-        try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
+        ServerSocket listener = serverSocket;
+        serverSocket = null;
+        try { if (listener != null) listener.close(); } catch (IOException ignored) {}
+        synchronized (clients) {
+            for (Socket client : clients) try { client.close(); } catch (IOException ignored) {}
+            clients.clear();
+        }
+        Thread previous = acceptThread;
+        acceptThread = null;
+        if (previous != null) {
+            try { previous.join(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
     }
 
-    private void acceptLoop() {
+    private void acceptLoop(ServerSocket listener) {
         try {
-            serverSocket = new ServerSocket(port, 8);
-            serverSocket.setReuseAddress(true);
-            while (running) {
-                final Socket socket = serverSocket.accept();
+            while (running && serverSocket == listener) {
+                final Socket socket = listener.accept();
+                synchronized (clients) {
+                    if (!running || serverSocket != listener) {
+                        socket.close();
+                        break;
+                    }
+                    clients.add(socket);
+                }
                 socket.setSoTimeout(10000);
                 Thread client = new Thread(new Runnable() {
                     @Override public void run() { serve(socket); }
@@ -52,7 +85,7 @@ final class MjpegServer {
                 client.start();
             }
         } catch (IOException e) {
-            if (running) android.util.Log.e("TabletWebcam", "HTTP server stopped", e);
+            if (running && serverSocket == listener) android.util.Log.e("TabletWebcam", "HTTP server stopped", e);
         }
     }
 
@@ -111,6 +144,7 @@ final class MjpegServer {
             // Browsers and video clients commonly close MJPEG sockets without a final request.
         } finally {
             try { socket.close(); } catch (IOException ignored) {}
+            synchronized (clients) { clients.remove(socket); }
         }
     }
 

@@ -8,7 +8,13 @@ La vista local usa TextureView. La privacidad aplica una matriz de color de hard
 
 ## Ciclo de vida
 
-Al salir de la actividad se liberan cámara y codec. El servicio receptor tiene un timeout de lectura de cinco segundos y reinicio automático. Al volver a abrir la app se reconecta. El módulo se configura para cargarse al arrancar Linux; el servicio inicia con la sesión del usuario.
+Desde 1.0.1, `onResume` abre los servidores y la captura; `onPause` cancela las actualizaciones de interfaz y libera cámara, codec, sockets TCP/UDP y bloqueo multicast. La actividad usa `singleTask`. Los listeners aplican `SO_REUSEADDR` antes de enlazar el puerto; al parar cierran los clientes y esperan brevemente al hilo de aceptación. Los hilos identifican su listener para no adoptar una sesión posterior. El socket H.264 se cierra antes de detener el codec para desbloquear un posible escritor de red.
+
+Esto corrige un fallo de 1.0.0: una actividad anterior en segundo plano podía conservar los puertos; al abrir otra instancia, sus servidores fallaban con `EADDRINUSE` y el receptor consultaba el estado de la instancia sin cámara. Reiniciar todo el proceso ocultaba ese fallo y no era una comprobación suficiente del recorrido Inicio/Atrás → abrir de nuevo.
+
+En Linux, FFmpeg conserva el timeout de lectura de cinco segundos. Tras salir, systemd inicia la espera con tres segundos de pausa. Mientras no hay cámara, un único script consulta el estado cada dos segundos y solo busca otra IP cada treinta segundos si no responde la dirección conocida. Un estado `waiting` no provoca descubrimiento. FFmpeg se inicia al recibir `camera-ready`; no se mantienen procesos de decodificación durante la espera. El módulo se configura para cargarse al arrancar Linux y el servicio inicia con la sesión del usuario.
+
+En la SM-T210 se comprobaron cuatro reaperturas consecutivas mediante Inicio y Atrás, incluidas transiciones rápidas: cada una volvió a entregar doce cuadros por V4L2 con varias imágenes distintas y sin errores de enlace de puertos. La comprobación completa hasta recoger esos cuadros tardó entre 5,4 y 6,0 segundos; incluye arranque de cámara, reconexión y captura de la muestra. En una ventana de ocho segundos de espera, el servicio Linux acumuló aproximadamente 20,6 ms de CPU; es una medición breve de ese equipo, no una garantía general. Android no mantuvo clientes de cámara ni listeners de Brisa mientras estuvo en segundo plano.
 
 ## Temporización
 
